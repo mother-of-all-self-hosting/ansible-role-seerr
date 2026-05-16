@@ -13,7 +13,7 @@
 seerr_enabled: true
 
 seerr_identifier: seerr
-seerr_base_path: "{{ seerr_identifier }}"
+seerr_base_path: "/{{ seerr_identifier }}"
 seerr_data_path: "{{ seerr_base_path }}/data"
 
 seerr_uid: ""
