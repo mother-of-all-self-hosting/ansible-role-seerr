@@ -24,7 +24,7 @@
 
     - name: Wait for seerr HTTP endpoint to respond (up to 10m)
       ansible.builtin.uri:
-        url: "http://localhost:5055/"
+        url: "http://localhost:5055/setup"
         method: GET
         status_code: [200, 302]
         follow_redirects: none
