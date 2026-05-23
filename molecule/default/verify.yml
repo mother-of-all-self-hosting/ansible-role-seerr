@@ -3,44 +3,44 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 ---
-- name: Verify
+- name: Verify Seerr systemd service
   hosts: all
   become: true
   gather_facts: false
   tasks:
-    - name: Wait for seerr service to become active (up to 180s)
+    - name: Wait for Seerr service to become active (up to 180s)
       ansible.builtin.systemd:
         name: seerr.service
-      register: svc
-      until: svc.status.ActiveState == 'active'
+      register: seerr_service
+      until: seerr_service.status.ActiveState == 'active'
       retries: 36
       delay: 5
 
-    - name: Assert seerr service is active
+    - name: Assert Seerr service is active
       ansible.builtin.assert:
-        that: svc.status.ActiveState == 'active'
-        fail_msg: "seerr.service not active ({{ svc.status.ActiveState }})"
+        that: seerr_service.status.ActiveState == 'active'
+        fail_msg: "seerr.service not active ({{ seerr_service.status.ActiveState }})"
         success_msg: "seerr.service is active"
 
-    - name: Wait for seerr HTTP endpoint to respond (up to 10m)
+    - name: Wait for Seerr HTTP endpoint to respond (up to 10m)
       ansible.builtin.uri:
         url: "http://localhost:5055/setup"
         method: GET
         status_code: [200, 302]
         follow_redirects: none
-      register: ep
-      until: ep.status in [200, 302]
+      register: seerr_endpoint
+      until: seerr_endpoint.status in [200, 302]
       retries: 120
       delay: 5
 
-    - name: Assert seerr HTTP endpoint responds
+    - name: Assert Seerr HTTP endpoint responds
       ansible.builtin.assert:
-        that: ep.status in [200, 302]
-        fail_msg: "seerr did not respond as expected ({{ ep.status | default('no response') }})"
-        success_msg: "seerr responded with {{ ep.status }}"
+        that: seerr_endpoint.status in [200, 302]
+        fail_msg: "Seerr did not respond as expected ({{ seerr_endpoint.status | default('no response') }})"
+        success_msg: "Seerr responded with {{ seerr_endpoint.status }}"
 
-    - name: Show service status summary
+    - name: Show Seerr systemd service status summary
       ansible.builtin.debug:
         msg:
-          - "seerr systemd: {{ svc.status.ActiveState }}"
-          - "seerr HTTP: {{ ep.status }}"
+          - "Seerr systemd: {{ seerr_service.status.ActiveState }}"
+          - "Seerr HTTP: {{ seerr_endpoint.status }}"
