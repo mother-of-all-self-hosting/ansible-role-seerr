@@ -22,6 +22,12 @@
         fail_msg: "seerr.service not active ({{ seerr_service.status.ActiveState }})"
         success_msg: "seerr.service is active"
 
+    - name: Retrieve Seerr service log for debugging
+      when: seerr_debug_service_enabled | bool
+      ansible.builtin.command:
+        cmd: journalctl -xeu seerr.service
+      changed_when: false
+
     - name: Wait for Seerr HTTP endpoint to respond (up to 10m)
       ansible.builtin.uri:
         url: "http://localhost:5055/setup"

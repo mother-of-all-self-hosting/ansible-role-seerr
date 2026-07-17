@@ -28,6 +28,10 @@ provisioner:
   inventory:
     group_vars:
       all:
+        # Helper variables
+        seerr_debug_service_enabled: false
+
+        # Variables for Seerr
         seerr_uid: 1000
         seerr_gid: 1000
         seerr_hostname: seerr
