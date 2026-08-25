@@ -36,3 +36,12 @@ just prek-install-git-pre-commit-hook
 This role supports [Molecule](https://docs.ansible.com/projects/molecule/), an Ansible testing framework designed for developing and testing Ansible collections, playbooks, and roles.
 
 Refer to [this page](./molecule/README.md) for details about how to utilize it.
+
+### Releases
+
+Release tags (`v<Seerr version>-<release>`) are cut automatically by [`.github/workflows/autotag.yml`](./.github/workflows/autotag.yml) when a commit lands on the `main` branch. The tag is derived from the state of the repository — the `seerr_version` value in [`defaults/main.yml`](defaults/main.yml) and the tags that already exist — rather than from commit messages, so it does not depend on the order in which pull requests get merged:
+
+- a `seerr_version` that has never been released is tagged `-0`
+- otherwise the release counter is incremented, but only when something under `defaults/`, `meta/`, `tasks/` or `templates/` actually changed since the previous release; documentation and CI changes do not create a release
+
+To see what the current checkout would be released as, run [`bin/compute-next-tag.sh`](./bin/compute-next-tag.sh). Its behavior is covered by `bin/test-compute-next-tag.sh`, which runs as a pre-commit hook whenever that script or `defaults/main.yml` changes.
