@@ -1,52 +1,307 @@
+# SPDX-FileCopyrightText: 2026 Slavi Pantaleev
 # SPDX-FileCopyrightText: 2026 spatterlight
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 ---
-- name: Verify Seerr systemd service
+- name: Verify Seerr
   hosts: all
   become: true
   gather_facts: false
+
   tasks:
-    - name: Wait for Seerr service to become active (up to 180s)
-      ansible.builtin.systemd:
-        name: seerr.service
+    # Only leaf literals may be read from here. The derived values in that file
+    # (paths, image name, the cleanup command) are Jinja expressions that fail
+    # on access outside the role, and anything this scenario tunes must keep
+    # coming from the scenario's own group_vars, which this does not override.
+    - name: Read the version the role pins from its defaults
+      ansible.builtin.include_vars:
+        file: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/defaults/main.yml"
+        name: seerr_role_defaults
+
+    - name: Wait for the Seerr systemd service to become active (up to 180s)
+      ansible.builtin.systemd_service:
+        name: "{{ seerr_molecule_container }}.service"
       register: seerr_service
-      until: seerr_service.status.ActiveState == 'active'
+      until: seerr_service.status.ActiveState | default('') == 'active'
       retries: 36
       delay: 5
+      failed_when: false
 
-    - name: Assert Seerr service is active
+    # Worth little on its own - `Restart=always` keeps a crash-looping unit
+    # looking active - but it localizes an outright failure to start.
+    - name: Assert the Seerr systemd service is active
       ansible.builtin.assert:
-        that: seerr_service.status.ActiveState == 'active'
-        fail_msg: "seerr.service not active ({{ seerr_service.status.ActiveState }})"
+        that: seerr_service.status.ActiveState | default('') == 'active'
+        fail_msg: "seerr.service is {{ seerr_service.status.ActiveState | default('missing') }}"
         success_msg: "seerr.service is active"
 
-    - name: Retrieve Seerr service log for debugging
+    - name: Retrieve the Seerr service log for debugging
       when: seerr_debug_service_enabled | bool
       ansible.builtin.command:
-        cmd: journalctl -xeu seerr.service
+        cmd: journalctl -xeu {{ seerr_molecule_container }}.service
       changed_when: false
 
-    - name: Wait for Seerr HTTP endpoint to respond (up to 10m)
+    # Seerr opens its SQLite database and runs its migrations before it binds a
+    # socket: pointed at an unreadable database it logs `SQLITE_NOTADB` and
+    # exits without ever listening. Any answer at all on this endpoint therefore
+    # means the database the role provisioned opened, which is what makes this a
+    # meaningful gate rather than a Next.js page that renders regardless.
+    - name: Wait for the Seerr HTTP API to respond (up to 10m)
       ansible.builtin.uri:
-        url: "http://localhost:5055/setup"
+        url: "http://127.0.0.1:{{ seerr_container_http_port }}/api/v1/status"
         method: GET
-        status_code: [200, 302]
+        status_code: [200]
         follow_redirects: none
-      register: seerr_endpoint
-      until: seerr_endpoint.status in [200, 302]
+      register: seerr_status
+      until: seerr_status.status | default(0) == 200
       retries: 120
       delay: 5
+      failed_when: false
 
-    - name: Assert Seerr HTTP endpoint responds
+    - name: Assert the Seerr HTTP API responds on the configured port
       ansible.builtin.assert:
-        that: seerr_endpoint.status in [200, 302]
-        fail_msg: "Seerr did not respond as expected ({{ seerr_endpoint.status | default('no response') }})"
-        success_msg: "Seerr responded with {{ seerr_endpoint.status }}"
+        that: seerr_status.status | default(0) == 200
+        fail_msg: >-
+          Seerr did not answer on port {{ seerr_container_http_port }}
+          ({{ seerr_status.status | default('no response') }}). Seerr falls back to
+          its own default of 5055 when `PORT` does not reach it.
+        success_msg: "Seerr answers on port {{ seerr_container_http_port }}"
 
-    - name: Show Seerr systemd service status summary
+    # Seerr reports its version without the leading `v` that the role's variable
+    # and the upstream tags carry.
+    - name: Assert the running Seerr is the version the role pins
+      ansible.builtin.assert:
+        that: seerr_status.json.version == (seerr_role_defaults.seerr_version | regex_replace('^v', ''))
+        fail_msg: >-
+          Seerr reports {{ seerr_status.json.version | default('nothing') }},
+          but the role pins {{ seerr_role_defaults.seerr_version }}
+        success_msg: "Seerr reports {{ seerr_status.json.version }}"
+
+    - name: Retrieve what Seerr reports about its data directory
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ seerr_container_http_port }}/api/v1/status/appdata"
+        method: GET
+        status_code: [200]
+        follow_redirects: none
+      register: seerr_appdata
+
+    - name: Assert Seerr can write to the directory the role bind-mounts
+      ansible.builtin.assert:
+        that:
+          - seerr_appdata.json.appData
+          - seerr_appdata.json.appDataPath == '/app/config'
+          - seerr_appdata.json.appDataPermissions
+        fail_msg: "Seerr cannot use /app/config: {{ seerr_appdata.json }}"
+        success_msg: "Seerr can write to /app/config"
+
+    # The database itself, on the host side of the bind mount. A mount that
+    # silently did not happen would leave nothing here.
+    - name: Read the header of the Seerr database file
+      ansible.builtin.command:
+        cmd: head -c 16 {{ seerr_molecule_data_path }}/db/db.sqlite3
+      register: seerr_database_header
+      changed_when: false
+
+    - name: Assert the Seerr database was created under the role's data path
+      ansible.builtin.assert:
+        that: seerr_database_header.stdout is search('SQLite format 3')
+        fail_msg: "{{ seerr_molecule_data_path }}/db/db.sqlite3 is not a SQLite database"
+        success_msg: "Seerr's database lives under {{ seerr_molecule_data_path }}"
+
+    - name: Read the Seerr application log
+      ansible.builtin.slurp:
+        src: "{{ seerr_molecule_data_path }}/logs/seerr.log"
+      register: seerr_application_log
+
+    # Two things the env file carries, in Seerr's own words: at `info` it says
+    # nothing about its settings migrations, and without `PORT` it says 5055.
+    #
+    # Scoped to what Seerr logged after its last `Starting Seerr version` line.
+    # The log file is per day, not per start, so a whole-file match would keep
+    # passing on evidence an earlier start left behind - which is exactly how
+    # this assert was caught failing to fail when the level was changed under it.
+    - name: Assert the log level and the port from the env file reached the process
+      ansible.builtin.assert:
+        that:
+          - "'[debug]' in seerr_current_start_log"
+          - ('Server ready on port ' ~ seerr_container_http_port) in seerr_current_start_log
+        fail_msg: "Seerr's log does not show the configured level and port since it last started"
+        success_msg: "Seerr logged at {{ seerr_environment_variables_log_level }} and bound {{ seerr_container_http_port }}"
+      vars:
+        seerr_current_start_log: >-
+          {{ (seerr_application_log.content | b64decode).split('Starting Seerr version') | last }}
+
+    # Australia/Eucla is +08:45 and observes no daylight saving, so 525 minutes
+    # ahead of UTC is a value only `TZ` from the env file can produce.
+    - name: Retrieve the UTC offset the Seerr process runs at
+      ansible.builtin.command:
+        cmd: >-
+          docker exec {{ seerr_molecule_container }}
+          node -e "process.stdout.write(String(-new Date().getTimezoneOffset()))"
+      register: seerr_timezone_offset
+      changed_when: false
+
+    - name: Assert the timezone from the env file reached the process
+      ansible.builtin.assert:
+        that: seerr_timezone_offset.stdout | trim == '525'
+        fail_msg: >-
+          Seerr runs at {{ seerr_timezone_offset.stdout | trim }} minutes from UTC,
+          not the 525 that {{ seerr_environment_variables_tz }} means
+        success_msg: "Seerr runs in {{ seerr_environment_variables_tz }}"
+
+    - name: Retrieve the Seerr container's configuration
+      ansible.builtin.command:
+        cmd: docker container inspect --format '{% raw %}{{json .}}{% endraw %}' {{ seerr_molecule_container }}
+      register: seerr_container_inspection
+      changed_when: false
+
+    - name: Assert the container runs the image the role pins
+      ansible.builtin.assert:
+        that: seerr_container.Config.Labels['org.opencontainers.image.version'] == seerr_role_defaults.seerr_version
+        fail_msg: >-
+          The container's image is labelled
+          {{ seerr_container.Config.Labels['org.opencontainers.image.version'] | default('nothing') }},
+          not {{ seerr_role_defaults.seerr_version }}
+        success_msg: "The container's image is labelled {{ seerr_role_defaults.seerr_version }}"
+      vars:
+        seerr_container: "{{ seerr_container_inspection.stdout | from_json }}"
+
+    - name: Assert the rendered env file was passed to the container
+      ansible.builtin.assert:
+        that:
+          - ('PORT=' ~ seerr_container_http_port) in seerr_container.Config.Env
+          - ('TZ=' ~ seerr_environment_variables_tz) in seerr_container.Config.Env
+          - ('LOG_LEVEL=' ~ seerr_environment_variables_log_level) in seerr_container.Config.Env
+        fail_msg: "The container's environment is {{ seerr_container.Config.Env }}"
+        success_msg: "The container carries the env file the role rendered"
+      vars:
+        seerr_container: "{{ seerr_container_inspection.stdout | from_json }}"
+
+    - name: Assert the role's data path is bind-mounted as Seerr's configuration directory
+      ansible.builtin.assert:
+        that:
+          - seerr_data_mounts | length == 1
+          - seerr_data_mounts[0].Type == 'bind'
+        fail_msg: "{{ seerr_molecule_data_path }} is not bind-mounted to /app/config"
+        success_msg: "{{ seerr_molecule_data_path }} is bind-mounted to /app/config"
+      vars:
+        seerr_data_mounts: >-
+          {{
+            (seerr_container_inspection.stdout | from_json).Mounts
+            | selectattr('Destination', 'equalto', '/app/config')
+            | selectattr('Source', 'equalto', seerr_molecule_data_path)
+            | list
+          }}
+
+    # `seerr_container_additional_volumes` is rendered into the systemd unit as
+    # `--mount` arguments. An entry that was silently dropped, or whose options
+    # were not passed on, would leave this list empty or read-write.
+    - name: Assert seerr_container_additional_volumes reaches the container
+      ansible.builtin.assert:
+        that:
+          - seerr_extra_mounts | length == 1
+          - seerr_extra_mounts[0].Type == 'bind'
+          - seerr_extra_mounts[0].Source == seerr_molecule_extra_mount_path_host
+          - not seerr_extra_mounts[0].RW
+        fail_msg: >-
+          {{ seerr_molecule_extra_mount_path_host }} is not mounted read-only at
+          {{ seerr_molecule_extra_mount_path_container }}
+        success_msg: "The additional volume is mounted read-only"
+      vars:
+        seerr_extra_mounts: >-
+          {{
+            (seerr_container_inspection.stdout | from_json).Mounts
+            | selectattr('Destination', 'equalto', seerr_molecule_extra_mount_path_container)
+            | list
+          }}
+
+    - name: Assert the additional container labels reach the container
+      ansible.builtin.assert:
+        that: seerr_labels[seerr_molecule_label_name] | default('') == seerr_molecule_label_value
+        fail_msg: "{{ seerr_molecule_label_name }} is not on the container"
+        success_msg: "{{ seerr_molecule_label_name }} is on the container"
+      vars:
+        seerr_labels: "{{ (seerr_container_inspection.stdout | from_json).Config.Labels }}"
+
+    # Negative control for the Traefik block of `../templates/labels.j2`: with
+    # `seerr_container_labels_traefik_enabled` false, not one of those labels
+    # may escape the conditional.
+    - name: Assert no Traefik labels are emitted while Traefik support is disabled
+      ansible.builtin.assert:
+        that: seerr_traefik_labels | length == 0
+        fail_msg: "Traefik labels were emitted anyway: {{ seerr_traefik_labels }}"
+        success_msg: "No Traefik labels are on the container"
+      vars:
+        seerr_traefik_labels: >-
+          {{
+            (seerr_container_inspection.stdout | from_json).Config.Labels
+            | dict2items | map(attribute='key')
+            | select('match', '^traefik[.]')
+            | list
+          }}
+
+    - name: Stat the support files the role renders
+      ansible.builtin.stat:
+        path: "{{ seerr_molecule_base_path }}/{{ item }}"
+      register: seerr_support_files
+      loop:
+        - env
+        - labels
+
+    - name: Assert the rendered support files are owned by the Seerr user and not world-readable
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.mode == '0640'
+          - item.stat.uid | int == seerr_uid | int
+          - item.stat.gid | int == seerr_gid | int
+        fail_msg: "{{ item.item }} is {{ item.stat.mode | default('missing') }} owned by {{ item.stat.uid | default('nobody') }}"
+        success_msg: "{{ item.item }} is {{ item.stat.mode }} owned by {{ item.stat.uid }}:{{ item.stat.gid }}"
+      loop: "{{ seerr_support_files.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Stat the Seerr data path
+      ansible.builtin.stat:
+        path: "{{ seerr_molecule_data_path }}"
+      register: seerr_data_path_stat
+
+    # Seerr keeps the API keys for Plex/Jellyfin, Sonarr and Radarr, its own API
+    # key and its session secret in `settings.json`, which it creates itself and
+    # leaves world-readable (0644). What keeps them unreadable to other users in
+    # practice is the mode and ownership the role gives the directory around
+    # them, so that is what is asserted here.
+    - name: Assert the Seerr data path is not traversable by other users
+      ansible.builtin.assert:
+        that:
+          - seerr_data_path_stat.stat.exists
+          - seerr_data_path_stat.stat.isdir
+          - seerr_data_path_stat.stat.mode == '0750'
+          - seerr_data_path_stat.stat.uid | int == seerr_uid | int
+          - seerr_data_path_stat.stat.gid | int == seerr_gid | int
+        fail_msg: >-
+          {{ seerr_molecule_data_path }} is {{ seerr_data_path_stat.stat.mode | default('missing') }}
+          owned by {{ seerr_data_path_stat.stat.uid | default('nobody') }}
+        success_msg: "{{ seerr_molecule_data_path }} is 0750 owned by {{ seerr_uid }}:{{ seerr_gid }}"
+
+    - name: Stat the settings file Seerr writes into the role's data path
+      ansible.builtin.stat:
+        path: "{{ seerr_molecule_data_path }}/settings.json"
+      register: seerr_settings_file
+
+    - name: Assert Seerr wrote its settings into the role's data path as the role's user
+      ansible.builtin.assert:
+        that:
+          - seerr_settings_file.stat.exists
+          - seerr_settings_file.stat.uid | int == seerr_uid | int
+        fail_msg: "{{ seerr_molecule_data_path }}/settings.json is missing or not owned by {{ seerr_uid }}"
+        success_msg: "Seerr wrote settings.json as {{ seerr_uid }}"
+
+    - name: Show what was verified
       ansible.builtin.debug:
         msg:
-          - "Seerr systemd: {{ seerr_service.status.ActiveState }}"
-          - "Seerr HTTP: {{ seerr_endpoint.status }}"
+          - "systemd: {{ seerr_service.status.ActiveState }}"
+          - "Seerr version: {{ seerr_status.json.version }} (role pins {{ seerr_role_defaults.seerr_version }})"
+          - "HTTP port: {{ seerr_container_http_port }}"
+          - "Timezone offset: {{ seerr_timezone_offset.stdout | trim }} minutes"

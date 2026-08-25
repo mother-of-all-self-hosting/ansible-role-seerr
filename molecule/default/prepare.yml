@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Slavi Pantaleev
 # SPDX-FileCopyrightText: 2026 spatterlight
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
@@ -17,12 +18,24 @@
     - name: Ensure required packages are installed for Seerr Molecule tests preparation
       ansible.builtin.package:
         name:
+          # Used by the `ansible.builtin.uri` calls in verify.yml
           - python3-requests
+          # The storage driver Docker is configured with below. `overlay2` cannot
+          # be nested inside the container Molecule runs these tests in, and
+          # `vfs` (the usual fallback) has no copy-on-write, so it writes out
+          # every layer of Seerr's image in full.
+          - fuse-overlayfs
         state: present
+
+    - name: Ensure the directory bind-mounted into the Seerr container exists
+      ansible.builtin.file:
+        path: "{{ seerr_molecule_extra_mount_path_host }}"
+        state: directory
+        mode: "0755"
 
     - name: Ensure Docker is installed for Seerr Molecule tests preparation
       ansible.builtin.include_role:
         name: ansible-role-docker
       vars:
         docker_daemon_options:
-          storage-driver: vfs
+          storage-driver: fuse-overlayfs

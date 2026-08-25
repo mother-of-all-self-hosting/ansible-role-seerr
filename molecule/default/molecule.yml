@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Slavi Pantaleev
 # SPDX-FileCopyrightText: 2026 spatterlight
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
@@ -19,8 +20,6 @@ platforms:
     cgroupns_mode: host
     privileged: true
     pre_build_image: true
-    published_ports:
-      - 127.0.0.1:5055:5055
 provisioner:
   name: ansible
   config_options:
@@ -32,12 +31,56 @@ provisioner:
         # Helper variables
         seerr_debug_service_enabled: false
 
+        # The container name and the paths the role derives from its identifier.
+        # Role defaults are not in scope in a verify play, and the derived ones
+        # are Jinja expressions that cannot be read out of defaults/main.yml
+        # either, so they are spelled out here.
+        seerr_molecule_container: seerr
+        seerr_molecule_base_path: /seerr
+        seerr_molecule_data_path: /seerr/data
+
+        # A directory bind-mounted into the container through
+        # `seerr_container_additional_volumes_custom`, so that the additional
+        # volumes list is exercised rather than assumed to work.
+        seerr_molecule_extra_mount_path_host: /var/lib/seerr-molecule-extra
+        seerr_molecule_extra_mount_path_container: /extra
+
+        # An arbitrary label, to check that `../templates/labels.j2` emits the
+        # additional labels and (with Traefik disabled below) nothing else.
+        seerr_molecule_label_name: mash.molecule.marker
+        seerr_molecule_label_value: seerr-default
+
         # Variables for Seerr
         seerr_uid: 1000
         seerr_gid: 1000
         seerr_hostname: localhost
         seerr_container_labels_traefik_enabled: false
-        seerr_container_http_host_bind_port: 5055
+
+        # Deliberately not Seerr's own built-in default of 5055. The port
+        # reaches the process only through `PORT` in the rendered env file
+        # (`const port = Number(process.env.PORT) || 5055`), so a Seerr
+        # answering on this one is evidence that the file arrived and was read.
+        seerr_container_http_port: 5099
+        seerr_container_http_host_bind_port: 127.0.0.1:5099
+
+        # Deliberately not the role's default of `Etc/UTC`, and a zone whose
+        # offset (+08:45) no other zone shares, so that the offset the process
+        # reports can only have come from the rendered env file.
+        seerr_environment_variables_tz: Australia/Eucla
+
+        # The role's own default, restated because the verification depends on
+        # it: at `debug` Seerr logs its settings migrations, and at `info` it
+        # does not, which is what makes the level observable.
+        seerr_environment_variables_log_level: debug
+
+        seerr_container_additional_volumes_custom:
+          - type: bind
+            src: "{{ seerr_molecule_extra_mount_path_host }}"
+            dst: "{{ seerr_molecule_extra_mount_path_container }}"
+            options: readonly
+
+        seerr_container_labels_additional_labels_custom:
+          - "{{ seerr_molecule_label_name }}={{ seerr_molecule_label_value }}"
   env:
     # Workaround for https://github.com/ansible/molecule/issues/4391
     ANSIBLE_ROLES_PATH: ${MOLECULE_PROJECT_DIRECTORY}/..:/.ansible/roles:/usr/share/ansible/roles:/etc/ansible/roles:~/.ansible/roles
