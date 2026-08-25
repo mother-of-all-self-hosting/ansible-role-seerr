@@ -49,7 +49,9 @@ seerr_container_network_deletion_enabled: true
 # Takes an "<ip>:<port>" or "<port>" value (e.g. "127.0.0.1:5055"), or empty string to not expose.
 seerr_container_http_host_bind_port: ""
 
-# The port number in the container for the web UI
+# The port number in the container for the web UI.
+# It is passed into the container as `PORT` (see `../templates/env.j2`), so the process
+# really does listen on this port, rather than on Seerr's built-in default of 5055.
 seerr_container_http_port: 5055
 
 # A list of additional container networks that the container would be connected to.
