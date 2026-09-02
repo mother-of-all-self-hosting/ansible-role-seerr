@@ -39,9 +39,6 @@ Refer to [this page](./molecule/README.md) for details about how to utilize it.
 
 ### Releases
 
-Release tags (`v<Seerr version>-<release>`) are cut automatically by [`.github/workflows/autotag.yml`](./.github/workflows/autotag.yml) when a commit lands on the `main` branch. The tag is derived from the state of the repository — the `seerr_version` value in [`defaults/main.yml`](defaults/main.yml) and the tags that already exist — rather than from commit messages, so it does not depend on the order in which pull requests get merged:
+Tags are created by [`.github/workflows/autotag.yml`](.github/workflows/autotag.yml), which asks [`bin/compute-next-tag.sh`](bin/compute-next-tag.sh) what the commit on `main` should be released as. The answer comes from the Seerr version pinned in [`defaults/main.yml`](defaults/main.yml) and from the tags that already exist, so a commit that only touches documentation or CI is not released at all, and any change to the role itself is — without waiting for a dependency bump to carry it along.
 
-- a `seerr_version` that has never been released is tagged `-0`
-- otherwise the release counter is incremented, but only when something under `defaults/`, `meta/`, `tasks/` or `templates/` actually changed since the previous release; documentation and CI changes do not create a release
-
-To see what the current checkout would be released as, run [`bin/compute-next-tag.sh`](./bin/compute-next-tag.sh). Its behavior is covered by `bin/test-compute-next-tag.sh`, which runs as a pre-commit hook whenever that script or `defaults/main.yml` changes.
+[`bin/test-compute-next-tag.sh`](bin/test-compute-next-tag.sh) exercises that script against throwaway repositories, and runs as a prek hook.
