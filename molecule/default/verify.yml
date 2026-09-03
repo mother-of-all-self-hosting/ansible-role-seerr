@@ -298,10 +298,10 @@
         fail_msg: "{{ seerr_molecule_data_path }}/settings.json is missing or not owned by {{ seerr_uid }}"
         success_msg: "Seerr wrote settings.json as {{ seerr_uid }}"
 
-    - name: Show what was verified
+    - name: Show the Seerr verification summary
       ansible.builtin.debug:
         msg:
-          - "systemd: {{ seerr_service.status.ActiveState }}"
+          - "Seerr systemd: {{ seerr_service.status.ActiveState }}"
           - "Seerr version: {{ seerr_status.json.version }} (role pins {{ seerr_role_defaults.seerr_version }})"
-          - "HTTP port: {{ seerr_container_http_port }}"
-          - "Timezone offset: {{ seerr_timezone_offset.stdout | trim }} minutes"
+          - "Seerr HTTP port: {{ seerr_container_http_port }}"
+          - "Seerr Timezone offset: {{ seerr_timezone_offset.stdout | trim }} minutes"
