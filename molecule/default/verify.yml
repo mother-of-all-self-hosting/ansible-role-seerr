@@ -157,7 +157,7 @@
         that: seerr_container.Config.Labels['org.opencontainers.image.version'] == seerr_role_defaults.seerr_version
         fail_msg: >-
           The container's image is labelled
-          {{ seerr_container.Config.Labels['org.opencontainers.image.version'] | default('nothing') }},
+          {{ seerr_container.Config.Labels['org.opencontainers.image.version'] | default('none') }},
           not {{ seerr_role_defaults.seerr_version }}
         success_msg: "The container's image is labelled {{ seerr_role_defaults.seerr_version }}"
       vars:
