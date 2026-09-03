@@ -68,14 +68,10 @@
           its own default of 5055 when `PORT` does not reach it.
         success_msg: "Seerr answers on port {{ seerr_container_http_port }}"
 
-    # Seerr reports its version without the leading `v` that the role's variable
-    # and the upstream tags carry.
-    - name: Assert the running Seerr is the version the role pins
+    - name: Assert the running Seerr is the version this role installs
       ansible.builtin.assert:
         that: seerr_status.json.version == (seerr_role_defaults.seerr_version | regex_replace('^v', ''))
-        fail_msg: >-
-          Seerr reports {{ seerr_status.json.version | default('nothing') }},
-          but the role pins {{ seerr_role_defaults.seerr_version }}
+        fail_msg: "Seerr reports {{ seerr_status.json.version | default('none') }}, expected {{ seerr_role_defaults.seerr_version }}"
         success_msg: "Seerr reports {{ seerr_status.json.version }}"
 
     - name: Retrieve what Seerr reports about its data directory
