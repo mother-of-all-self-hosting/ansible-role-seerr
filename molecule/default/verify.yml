@@ -10,14 +10,13 @@
   gather_facts: false
 
   tasks:
-    # Only leaf literals may be read from here. The derived values in that file
-    # (paths, image name, the cleanup command) are Jinja expressions that fail
-    # on access outside the role, and anything this scenario tunes must keep
-    # coming from the scenario's own group_vars, which this does not override.
-    - name: Read the version the role pins from its defaults
+    # The role is not included in this playbook, so its defaults are not in
+    # scope. Reading defaults/main.yml directly ties the version assertion
+    # below.
+    - name: Load the role defaults
       ansible.builtin.include_vars:
         file: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/defaults/main.yml"
-        name: seerr_role_defaults
+        name: seerr_defaults
 
     - name: Wait for the Seerr systemd service to become active (up to 180s)
       ansible.builtin.systemd_service:
@@ -70,8 +69,8 @@
 
     - name: Assert the running Seerr is the version this role installs
       ansible.builtin.assert:
-        that: seerr_status.json.version == (seerr_role_defaults.seerr_version | regex_replace('^v', ''))
-        fail_msg: "Seerr reports {{ seerr_status.json.version | default('none') }}, expected {{ seerr_role_defaults.seerr_version }}"
+        that: seerr_status.json.version == (seerr_defaults.seerr_version | regex_replace('^v', ''))
+        fail_msg: "Seerr reports {{ seerr_status.json.version | default('none') }}, expected {{ seerr_defaults.seerr_version }}"
         success_msg: "Seerr reports {{ seerr_status.json.version }}"
 
     - name: Retrieve what Seerr reports about its data directory
@@ -298,6 +297,6 @@
       ansible.builtin.debug:
         msg:
           - "Seerr systemd: {{ seerr_service.status.ActiveState }}"
-          - "Seerr version: {{ seerr_status.json.version }} (role pins {{ seerr_role_defaults.seerr_version }})"
+          - "Seerr version: {{ seerr_status.json.version }} (role pins {{ seerr_defaults.seerr_version }})"
           - "Seerr HTTP port: {{ seerr_container_http_port }}"
           - "Seerr Timezone offset: {{ seerr_timezone_offset.stdout | trim }} minutes"
