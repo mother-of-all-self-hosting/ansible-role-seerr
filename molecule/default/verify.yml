@@ -151,14 +151,11 @@
       register: seerr_container_inspection
       changed_when: false
 
-    - name: Assert the container runs the image the role pins
+    - name: Assert the running Seerr is the version this role installs
       ansible.builtin.assert:
-        that: seerr_container.Config.Labels['org.opencontainers.image.version'] == seerr_role_defaults.seerr_version
-        fail_msg: >-
-          The container's image is labelled
-          {{ seerr_container.Config.Labels['org.opencontainers.image.version'] | default('none') }},
-          not {{ seerr_role_defaults.seerr_version }}
-        success_msg: "The container's image is labelled {{ seerr_role_defaults.seerr_version }}"
+        that: seerr_container.Config.Labels['org.opencontainers.image.version'] == seerr_defaults.seerr_version
+        fail_msg: "Seerr reports {{ seerr_container.Config.Labels['org.opencontainers.image.version'] | default('none') }}, expected {{ seerr_defaults.seerr_version }}"
+        success_msg: "Seerr reports {{ seerr_container.Config.Labels['org.opencontainers.image.version'] }}"
       vars:
         seerr_container: "{{ seerr_container_inspection.stdout | from_json }}"
 
