@@ -294,6 +294,6 @@
       ansible.builtin.debug:
         msg:
           - "Seerr systemd: {{ seerr_service.status.ActiveState }}"
-          - "Seerr version: {{ seerr_status.json.version }} (role pins {{ seerr_defaults.seerr_version }})"
+          - "Seerr version: {{ seerr_status.json.version }}"
           - "Seerr HTTP port: {{ seerr_container_http_port }}"
           - "Seerr Timezone offset: {{ seerr_timezone_offset.stdout | trim }} minutes"
