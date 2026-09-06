@@ -148,7 +148,7 @@
     - name: Retrieve the Seerr container's configuration
       ansible.builtin.command:
         cmd: docker container inspect --format '{% raw %}{{json .}}{% endraw %}' {{ seerr_molecule_container }}
-      register: seerr_container_inspection
+      register: seerr_container_raw
       changed_when: false
 
     - name: Assert the running Seerr is the version this role installs
@@ -157,7 +157,7 @@
         fail_msg: "Seerr reports {{ seerr_container.Config.Labels['org.opencontainers.image.version'] | default('none') }}, expected {{ seerr_defaults.seerr_version }}"
         success_msg: "Seerr reports {{ seerr_container.Config.Labels['org.opencontainers.image.version'] }}"
       vars:
-        seerr_container: "{{ seerr_container_inspection.stdout | from_json }}"
+        seerr_container: "{{ seerr_container_raw.stdout | from_json }}"
 
     - name: Assert the rendered env file was passed to the container
       ansible.builtin.assert:
@@ -168,7 +168,7 @@
         fail_msg: "The container's environment is {{ seerr_container.Config.Env }}"
         success_msg: "The container carries the env file the role rendered"
       vars:
-        seerr_container: "{{ seerr_container_inspection.stdout | from_json }}"
+        seerr_container: "{{ seerr_container_raw.stdout | from_json }}"
 
     - name: Assert the role's data path is bind-mounted as Seerr's configuration directory
       ansible.builtin.assert:
@@ -180,7 +180,7 @@
       vars:
         seerr_data_mounts: >-
           {{
-            (seerr_container_inspection.stdout | from_json).Mounts
+            (seerr_container_raw.stdout | from_json).Mounts
             | selectattr('Destination', 'equalto', '/app/config')
             | selectattr('Source', 'equalto', seerr_molecule_data_path)
             | list
@@ -203,7 +203,7 @@
       vars:
         seerr_extra_mounts: >-
           {{
-            (seerr_container_inspection.stdout | from_json).Mounts
+            (seerr_container_raw.stdout | from_json).Mounts
             | selectattr('Destination', 'equalto', seerr_molecule_extra_mount_path_container)
             | list
           }}
@@ -214,7 +214,7 @@
         fail_msg: "{{ seerr_molecule_label_name }} is not on the container"
         success_msg: "{{ seerr_molecule_label_name }} is on the container"
       vars:
-        seerr_labels: "{{ (seerr_container_inspection.stdout | from_json).Config.Labels }}"
+        seerr_labels: "{{ (seerr_container_raw.stdout | from_json).Config.Labels }}"
 
     # Negative control for the Traefik block of `../templates/labels.j2`: with
     # `seerr_container_labels_traefik_enabled` false, not one of those labels
@@ -227,7 +227,7 @@
       vars:
         seerr_traefik_labels: >-
           {{
-            (seerr_container_inspection.stdout | from_json).Config.Labels
+            (seerr_container_raw.stdout | from_json).Config.Labels
             | dict2items | map(attribute='key')
             | select('match', '^traefik[.]')
             | list
