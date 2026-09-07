@@ -20,25 +20,28 @@
 
     - name: Wait for the Seerr systemd service to become active (up to 180s)
       ansible.builtin.systemd_service:
-        name: "{{ seerr_molecule_container }}.service"
+        name: seerr.service
       register: seerr_service
       until: seerr_service.status.ActiveState | default('') == 'active'
       retries: 36
       delay: 5
+      # So that giving up is reported by the assertion below rather than as a
+      # wall of systemd unit properties.
       failed_when: false
 
-    # Worth little on its own - `Restart=always` keeps a crash-looping unit
-    # looking active - but it localizes an outright failure to start.
+    # `Restart=always` in the systemd unit means that even a container which crashes
+    # and gets restarted reads as active here, so this is a precondition rather than
+    # a result.
     - name: Assert the Seerr systemd service is active
       ansible.builtin.assert:
-        that: seerr_service.status.ActiveState | default('') == 'active'
-        fail_msg: "seerr.service is {{ seerr_service.status.ActiveState | default('missing') }}"
+        that: seerr_service.status.ActiveState == 'active'
+        fail_msg: "seerr.service is not active ({{ seerr_service.status.ActiveState }})"
         success_msg: "seerr.service is active"
 
-    - name: Retrieve the Seerr service log for debugging
+    - name: Retrieve the Seerr systemd service log for debugging
       when: seerr_debug_service_enabled | bool
       ansible.builtin.command:
-        cmd: journalctl -xeu {{ seerr_molecule_container }}.service
+        cmd: journalctl -xeu seerr.service
       changed_when: false
 
     # Seerr opens its SQLite database and runs its migrations before it binds a
