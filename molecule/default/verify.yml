@@ -41,7 +41,7 @@
     - name: Retrieve the Seerr systemd service log for debugging
       when: seerr_debug_service_enabled | bool
       ansible.builtin.command:
-        cmd: journalctl -xeu seerr.service
+        cmd: journalctl --no-pager --output=cat --unit=seerr.service
       changed_when: false
 
     # Seerr opens its SQLite database and runs its migrations before it binds a
