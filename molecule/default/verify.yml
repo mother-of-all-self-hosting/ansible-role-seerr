@@ -10,6 +10,8 @@
   gather_facts: false
 
   tasks:
+    - name: Verify that Seerr works
+      block:
     # The role is not included in this playbook, so its defaults are not in
     # scope. Reading defaults/main.yml directly ties the version assertion
     # below.
@@ -300,3 +302,19 @@
           - "Seerr version: {{ seerr_status.json.version }}"
           - "Seerr HTTP port: {{ seerr_container_http_port }}"
           - "Seerr Timezone offset: {{ seerr_timezone_offset.stdout | trim }} minutes"
+
+      rescue:
+        # Whatever went wrong, the reason is almost always in the systemd service log.
+        - name: Retrieve the Seerr systemd service log
+          ansible.builtin.command:
+            cmd: journalctl --no-pager --output=cat --unit=seerr.service
+          register: seerr_service_log
+          changed_when: false
+
+        - name: Show the Seerr systemd service log
+          ansible.builtin.debug:
+            var: seerr_service_log.stdout_lines
+
+        - name: Fail because verification did not pass
+          ansible.builtin.fail:
+            msg: "Seerr verification failed. The systemd service log is printed above."
