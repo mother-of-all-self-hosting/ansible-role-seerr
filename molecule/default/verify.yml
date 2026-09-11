@@ -9,6 +9,10 @@
   become: true
   gather_facts: false
 
+  vars:
+    seerr_verify_units:
+      - seerr.service
+
   tasks:
     - name: Verify that Seerr works
       block:
@@ -20,13 +24,14 @@
             file: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/defaults/main.yml"
             name: seerr_defaults
 
-        - name: Wait for the Seerr systemd service to become active (up to 180s)
+        - name: Wait for the Seerr systemd services to become active (up to 180s each)
           ansible.builtin.systemd_service:
-            name: seerr.service
-          register: seerr_service
-          until: seerr_service.status.ActiveState | default('') == 'active'
+            name: "{{ item }}"
+          register: seerr_services
+          until: seerr_services.status.ActiveState == 'active'
           retries: 36
           delay: 5
+          loop: "{{ seerr_verify_units }}"
           # So that giving up is reported by the assertion below rather than as a
           # wall of systemd unit properties.
           failed_when: false
@@ -34,17 +39,20 @@
         # `Restart=always` in the systemd unit means that even a container which crashes
         # and gets restarted reads as active here, so this is a precondition rather than
         # a result.
-        - name: Assert the Seerr systemd service is active
+        - name: Assert the Seerr systemd services are active
           ansible.builtin.assert:
-            that: seerr_service.status.ActiveState == 'active'
-            fail_msg: "seerr.service is not active ({{ seerr_service.status.ActiveState }})"
-            success_msg: "seerr.service is active"
+            that: seerr_services.results | map(attribute='status.ActiveState') | unique | list == ['active']
+            fail_msg: >-
+              Not every service is active:
+              {{ dict(seerr_verify_units | zip(seerr_services.results | map(attribute='status.ActiveState'))) }}
+            success_msg: "Every systemd service is active"
 
-        - name: Retrieve the Seerr systemd service log for debugging
+        - name: Retrieve the Seerr systemd services log for debugging
           when: seerr_debug_service_enabled | bool
           ansible.builtin.command:
-            cmd: journalctl --no-pager --output=cat --unit=seerr.service
+            cmd: "journalctl --no-pager --output=cat --unit={{ item }}"
           changed_when: false
+          loop: "{{ seerr_verify_units }}"
 
         # Seerr opens its SQLite database and runs its migrations before it binds a
         # socket: pointed at an unreadable database it logs `SQLITE_NOTADB` and
@@ -298,7 +306,7 @@
         - name: Show the Seerr verification summary
           ansible.builtin.debug:
             msg:
-              - "Seerr systemd: {{ seerr_service.status.ActiveState }}"
+              - "Seerr systemd: {% for unit, state in seerr_verify_units | zip(seerr_services.results | map(attribute='status.ActiveState')) %}{{ unit }} ({{ state }}){% if not loop.last %}, {% endif %}{% endfor %}"
               - "Seerr version: {{ seerr_status.json.version }}"
               - "Seerr HTTP port: {{ seerr_container_http_port }}"
               - "Seerr Timezone offset: {{ seerr_timezone_offset.stdout | trim }} minutes"
