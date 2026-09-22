@@ -16,6 +16,11 @@ seerr_identifier: seerr
 seerr_base_path: "/{{ seerr_identifier }}"
 seerr_data_path: "{{ seerr_base_path }}/data"
 
+# renovate: datasource=docker depName=ghcr.io/seerr-team/seerr versioning=semver
+seerr_version: v3.4.1
+
+seerr_arch: amd64
+
 seerr_uid: ""
 seerr_gid: ""
 
@@ -25,11 +30,6 @@ seerr_hostname: ""
 # The path at which Seerr is served.
 # This value must either be `/` or not end with a slash (e.g. `/seerr`).
 seerr_path_prefix: /
-
-# renovate: datasource=docker depName=ghcr.io/seerr-team/seerr versioning=semver
-seerr_version: v3.4.1
-
-seerr_arch: amd64
 
 seerr_container_image: "{{ seerr_container_image_registry_prefix }}seerr-team/seerr:{{ seerr_container_image_tag }}"
 seerr_container_image_tag: "{{ seerr_version }}"
