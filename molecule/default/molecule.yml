@@ -53,22 +53,29 @@ provisioner:
         seerr_molecule_label_value: seerr-default
 
         # Variables for Seerr
-        seerr_uid: 1000
-        seerr_gid: 1000
-        seerr_hostname: localhost
-        seerr_container_labels_traefik_enabled: false
+        seerr_uid: 1873
+        seerr_gid: 1873
+
+        seerr_hostname: seerr.molecule.local
+
+        # A non-root path prefix exercises the strip-prefix and slashless
+        # redirect middlewares in templates/labels.j2.
+        seerr_path_prefix: /seerr-ui
+
+        # Neither the role's default of Etc/UTC nor the test host's zone, so
+        # that the timezone the container ends up in can only have come from
+        # templates/env.j2.
+        seerr_environment_variables_tz: Asia/Tokyo
+
+        seerr_container_labels_traefik_enabled: true
 
         # Deliberately not Seerr's own built-in default of 5055. The port
         # reaches the process only through `PORT` in the rendered env file
         # (`const port = Number(process.env.PORT) || 5055`), so a Seerr
         # answering on this one is evidence that the file arrived and was read.
-        seerr_container_http_port: 5099
-        seerr_container_http_host_bind_port: 127.0.0.1:5099
+        seerr_container_http_host_bind_port: 127.0.0.1:17878
 
-        # Deliberately not the role's default of `Etc/UTC`, and a zone whose
-        # offset (+08:45) no other zone shares, so that the offset the process
-        # reports can only have come from the rendered env file.
-        seerr_environment_variables_tz: Australia/Eucla
+        seerr_container_http_port: 17878
 
         # The role's own default, restated because the verification depends on
         # it: at `debug` Seerr logs its settings migrations, and at `info` it

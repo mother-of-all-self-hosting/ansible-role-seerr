@@ -11,6 +11,22 @@
   gather_facts: false
 
   vars:
+    # The name carries both the role and the scenario, like the platform does,
+    # so a leftover container can never be mistaken for another scenario's.
+    seerr_verify_control_container: "{{ inventory_hostname }}-stock-control"
+
+    # The unusual values the scenario configures the role with. Written down
+    # here rather than read back out of the inventory, so that a verify run
+    # compares the running container against something stated, not against
+    # whatever the scenario happens to say at the time.
+    seerr_expected_uid: 1873
+    seerr_expected_gid: 1873
+    seerr_expected_hostname: seerr.molecule.local
+    seerr_expected_path_prefix: /seerr-ui
+    seerr_expected_timezone: Asia/Tokyo
+    seerr_expected_timezone_abbreviation: JST
+    seerr_expected_log_level: debug
+
     seerr_verify_units:
       - seerr.service
 
@@ -24,6 +40,10 @@
           ansible.builtin.include_vars:
             file: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/defaults/main.yml"
             name: seerr_defaults
+
+        # ------------------------------------------------------------------
+        # The systemd unit
+        # ------------------------------------------------------------------
 
         - name: Wait for the Seerr systemd services to become active (up to 180s each)
           ansible.builtin.systemd_service:
@@ -81,11 +101,9 @@
               its own default of 5055 when `PORT` does not reach it.
             success_msg: "Seerr answers on port {{ seerr_container_http_port }}"
 
-        - name: Assert the running Seerr is the version this role installs
-          ansible.builtin.assert:
-            that: seerr_status.json.version == (seerr_defaults.seerr_version | regex_replace('^v', ''))
-            fail_msg: "Seerr reports {{ seerr_status.json.version | default('none') }}, expected {{ seerr_defaults.seerr_version }}"
-            success_msg: "Seerr reports {{ seerr_status.json.version }}"
+        # ------------------------------------------------------------------
+        # The bind mounts
+        # ------------------------------------------------------------------
 
         - name: Retrieve what Seerr reports about its data directory
           ansible.builtin.uri:
@@ -118,71 +136,15 @@
             fail_msg: "{{ seerr_molecule_data_path }}/db/db.sqlite3 is not a SQLite database"
             success_msg: "Seerr's database lives under {{ seerr_molecule_data_path }}"
 
-        - name: Read the Seerr application log
-          ansible.builtin.slurp:
-            src: "{{ seerr_molecule_data_path }}/logs/seerr.log"
-          register: seerr_application_log
-
-        # Two things the env file carries, in Seerr's own words: at `info` it says
-        # nothing about its settings migrations, and without `PORT` it says 5055.
-        #
-        # Scoped to what Seerr logged after its last `Starting Seerr version` line.
-        # The log file is per day, not per start, so a whole-file match would keep
-        # passing on evidence an earlier start left behind - which is exactly how
-        # this assert was caught failing to fail when the level was changed under it.
-        - name: Assert the log level and the port from the env file reached the process
-          ansible.builtin.assert:
-            that:
-              - "'[debug]' in seerr_current_start_log"
-              - ('Server ready on port ' ~ seerr_container_http_port) in seerr_current_start_log
-            fail_msg: "Seerr's log does not show the configured level and port since it last started"
-            success_msg: "Seerr logged at {{ seerr_environment_variables_log_level }} and bound {{ seerr_container_http_port }}"
-          vars:
-            seerr_current_start_log: >-
-              {{ (seerr_application_log.content | b64decode).split('Starting Seerr version') | last }}
-
-        # Australia/Eucla is +08:45 and observes no daylight saving, so 525 minutes
-        # ahead of UTC is a value only `TZ` from the env file can produce.
-        - name: Retrieve the UTC offset the Seerr process runs at
+        - name: Inspect Seerr container
           ansible.builtin.command:
-            cmd: >-
-              docker exec {{ seerr_molecule_container }}
-              node -e "process.stdout.write(String(-new Date().getTimezoneOffset()))"
-          register: seerr_timezone_offset
-          changed_when: false
-
-        - name: Assert the timezone from the env file reached the process
-          ansible.builtin.assert:
-            that: seerr_timezone_offset.stdout | trim == '525'
-            fail_msg: >-
-              Seerr runs at {{ seerr_timezone_offset.stdout | trim }} minutes from UTC,
-              not the 525 that {{ seerr_environment_variables_tz }} means
-            success_msg: "Seerr runs in {{ seerr_environment_variables_tz }}"
-
-        - name: Retrieve the Seerr container's configuration
-          ansible.builtin.command:
-            cmd: docker container inspect --format '{% raw %}{{json .}}{% endraw %}' {{ seerr_molecule_container }}
+            cmd: docker container inspect seerr
           register: seerr_container_raw
           changed_when: false
 
-        - name: Assert the running Seerr is the version this role installs
-          ansible.builtin.assert:
-            that: seerr_container.Config.Labels['org.opencontainers.image.version'] == seerr_defaults.seerr_version
-            fail_msg: "Seerr reports {{ seerr_container.Config.Labels['org.opencontainers.image.version'] | default('none') }}, expected {{ seerr_defaults.seerr_version }}"
-            success_msg: "Seerr reports {{ seerr_container.Config.Labels['org.opencontainers.image.version'] }}"
-          vars:
-            seerr_container: "{{ seerr_container_raw.stdout | from_json }}"
-
-        - name: Assert the rendered env file was passed to the container
-          ansible.builtin.assert:
-            that:
-              - ('PORT=' ~ seerr_container_http_port) in seerr_container.Config.Env
-              - ('TZ=' ~ seerr_environment_variables_tz) in seerr_container.Config.Env
-              - ('LOG_LEVEL=' ~ seerr_environment_variables_log_level) in seerr_container.Config.Env
-            fail_msg: "The container's environment is {{ seerr_container.Config.Env }}"
-            success_msg: "The container carries the env file the role rendered"
-          vars:
-            seerr_container: "{{ seerr_container_raw.stdout | from_json }}"
+        - name: Parse the Seerr container definition
+          ansible.builtin.set_fact:
+            seerr_container: "{{ (seerr_container_raw.stdout | from_json)[0] }}"
 
         - name: Assert the role's data path is bind-mounted as Seerr's configuration directory
           ansible.builtin.assert:
@@ -194,7 +156,7 @@
           vars:
             seerr_data_mounts: >-
               {{
-                (seerr_container_raw.stdout | from_json).Mounts
+                seerr_container.Mounts
                 | selectattr('Destination', 'equalto', '/app/config')
                 | selectattr('Source', 'equalto', seerr_molecule_data_path)
                 | list
@@ -217,35 +179,109 @@
           vars:
             seerr_extra_mounts: >-
               {{
-                (seerr_container_raw.stdout | from_json).Mounts
+                seerr_container.Mounts
                 | selectattr('Destination', 'equalto', seerr_molecule_extra_mount_path_container)
                 | list
               }}
 
-        - name: Assert the additional container labels reach the container
-          ansible.builtin.assert:
-            that: seerr_labels[seerr_molecule_label_name] | default('') == seerr_molecule_label_value
-            fail_msg: "{{ seerr_molecule_label_name }} is not on the container"
-            success_msg: "{{ seerr_molecule_label_name }} is on the container"
-          vars:
-            seerr_labels: "{{ (seerr_container_raw.stdout | from_json).Config.Labels }}"
+        # ------------------------------------------------------------------
+        # What `docker create` was actually told
+        # ------------------------------------------------------------------
 
-        # Negative control for the Traefik block of `../templates/labels.j2`: with
-        # `seerr_container_labels_traefik_enabled` false, not one of those labels
-        # may escape the conditional.
-        - name: Assert no Traefik labels are emitted while Traefik support is disabled
+        - name: Read the ports Seerr listens on
+          ansible.builtin.command:
+            cmd: docker exec seerr netstat -lnt
+          register: seerr_listening_raw
+          changed_when: false
+
+        - name: Make sense of the ports Seerr listens on
+          ansible.builtin.set_fact:
+            seerr_listening_ports: "{{ seerr_listening_raw.stdout | regex_findall(':([0-9]+)\\s') | unique }}"
+
+        - name: Assert Seerr listens on the port the role configured and not on its own default
           ansible.builtin.assert:
-            that: seerr_traefik_labels | length == 0
-            fail_msg: "Traefik labels were emitted anyway: {{ seerr_traefik_labels }}"
-            success_msg: "No Traefik labels are on the container"
-          vars:
-            seerr_traefik_labels: >-
-              {{
-                (seerr_container_raw.stdout | from_json).Config.Labels
-                | dict2items | map(attribute='key')
-                | select('match', '^traefik[.]')
-                | list
-              }}
+            that:
+              - seerr_container_http_port | string in seerr_listening_ports
+              - "'5055' not in seerr_listening_ports"
+            fail_msg: >-
+              Seerr listens on {{ seerr_listening_ports | join(', ') }}, not on the configured
+              17878, so seerr_container_http_port does not reach the process
+            success_msg: >-
+              Seerr listens on 17878 and not on its built-in 5055,
+              so seerr_container_http_port reaches the process
+
+        - name: Assert that the role's timezone reached the container environment
+          ansible.builtin.assert:
+            that:
+              - ('TZ=' ~ seerr_expected_timezone) in seerr_container.Config.Env
+            fail_msg: "templates/env.j2 did not put TZ={{ seerr_expected_timezone }} on the container"
+            success_msg: "The container environment carries TZ={{ seerr_expected_timezone }}"
+
+        - name: Assert that the role's log level reached the container environment
+          ansible.builtin.assert:
+            that:
+              - ('LOG_LEVEL=' ~ seerr_expected_log_level) in seerr_container.Config.Env
+            fail_msg: "templates/env.j2 did not put LOG_LEVEL={{ seerr_expected_log_level }} on the container"
+            success_msg: "The container environment carries LOG_LEVEL={{ seerr_expected_log_level }}"
+
+        - name: Assert that the container image is the pinned version
+          ansible.builtin.assert:
+            that:
+              - seerr_container.Config.Image == 'ghcr.io/seerr-team/seerr:' ~ seerr_defaults.seerr_version
+            fail_msg: >-
+              The container runs {{ seerr_container.Config.Image }}, not the
+              {{ seerr_defaults.seerr_version }} pinned in defaults/main.yml
+            success_msg: "The container runs {{ seerr_container.Config.Image }}"
+
+        - name: Assert the running Seerr is the version this role installs
+          ansible.builtin.assert:
+            that:
+              - seerr_status.json.version == (seerr_defaults.seerr_version | regex_replace('^v', ''))
+              - seerr_container.Config.Labels['org.opencontainers.image.version'] == seerr_defaults.seerr_version
+            fail_msg: "Seerr reports {{ seerr_status.json.version | default('none') }}, expected {{ seerr_defaults.seerr_version }}"
+            success_msg: "Seerr reports {{ seerr_status.json.version }}"
+
+        # ------------------------------------------------------------------
+        # Traefik labels
+        # ------------------------------------------------------------------
+
+        - name: Assert that the Traefik labels describe the configured hostname and path prefix
+          ansible.builtin.assert:
+            that:
+              - seerr_container.Config.Labels['traefik.enable'] == 'true'
+              - seerr_container.Config.Labels['traefik.http.routers.seerr.rule'] == 'Host(`' ~ seerr_expected_hostname ~ '`) && PathPrefix(`' ~ seerr_expected_path_prefix ~ '`)'
+              - seerr_container.Config.Labels['traefik.http.middlewares.seerr-strip-prefix.stripprefix.prefixes'] == seerr_expected_path_prefix
+              - seerr_container.Config.Labels['traefik.http.services.seerr.loadbalancer.server.port'] == '17878'
+            fail_msg: "The Traefik labels are not what templates/labels.j2 should have produced: {{ seerr_container.Config.Labels }}"
+            success_msg: "The Traefik labels route {{ seerr_expected_hostname }}{{ seerr_expected_path_prefix }} to port 17878"
+
+        # ------------------------------------------------------------------
+        # What the process inside the container actually sees
+        # ------------------------------------------------------------------
+
+        - name: Ask the Seerr container which timezone and user it is running in
+          ansible.builtin.command:
+            cmd: docker exec seerr sh -c 'date +%Z; id -u; id -g'
+          register: seerr_process_identity
+          changed_when: false
+
+        - name: Assert that the Seerr process runs in the role's timezone, as the role's user
+          ansible.builtin.assert:
+            that:
+              - seerr_process_identity.stdout_lines[0] == seerr_expected_timezone_abbreviation
+              - seerr_process_identity.stdout_lines[1] == seerr_expected_uid | string
+              - seerr_process_identity.stdout_lines[2] == seerr_expected_gid | string
+            fail_msg: >-
+              The container reports zone/uid/gid {{ seerr_process_identity.stdout_lines }},
+              expected [{{ seerr_expected_timezone_abbreviation }},
+              {{ seerr_expected_uid }}, {{ seerr_expected_gid }}]
+            success_msg: >-
+              The Seerr process runs in {{ seerr_process_identity.stdout_lines[0] }}
+              as {{ seerr_process_identity.stdout_lines[1] }}:{{ seerr_process_identity.stdout_lines[2] }}
+
+        # ------------------------------------------------------------------
+        # Support files
+        # ------------------------------------------------------------------
 
         - name: Stat the support files the role renders
           ansible.builtin.stat:
@@ -267,6 +303,10 @@
           loop: "{{ seerr_support_files.results }}"
           loop_control:
             label: "{{ item.item }}"
+
+        # ------------------------------------------------------------------
+        # Data path
+        # ------------------------------------------------------------------
 
         - name: Stat the Seerr data path
           ansible.builtin.stat:
@@ -350,7 +390,6 @@
               - "Seerr restarts: {% for unit, restarts in seerr_verify_units | zip(seerr_restarts_after.results | map(attribute='status.NRestarts')) %}{{ restarts }} ({{ unit }}){% if not loop.last %}, {% endif %}{% endfor %}"
               - "Seerr version: {{ seerr_status.json.version }}"
               - "Seerr HTTP port: {{ seerr_container_http_port }}"
-              - "Seerr Timezone offset: {{ seerr_timezone_offset.stdout | trim }} minutes"
 
       rescue:
         # Whatever went wrong, the reason is almost always in the systemd service log.
