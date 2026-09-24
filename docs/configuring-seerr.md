@@ -59,43 +59,6 @@ After adjusting the hostname, make sure to adjust your DNS records to point the 
 >[!NOTE]
 > The `seerr_path_prefix` variable can be adjusted to host under a subpath (e.g. `seerr_path_prefix: /seerr`), but this hasn't been tested yet.
 
-### Mounting additional data directories (optional)
-
-To mount additional data directories, add the following configuration to your `vars.yml` file (adapt to your needs):
-
-```yaml
-seerr_container_additional_volumes_custom:
-  - type: bind
-    src: /path/to/blackhole
-    dst: /downloads
-```
-
-### Configuring trusted networks
-
-Seerr only trusts forwarded headers from loopback addresses by default. For Traefik to pass the original client address and HTTPS scheme to Seerr, it is necessary to configure **Trusted Networks** with the proxy's address or network. Refer to [Seerr's security settings](https://wiki.servarr.com/seerr/settings#security) for details.
-
-First, inspect the Docker network shared by Traefik and Seerr on the server:
-
-```sh
-docker network inspect NETWORK_NAME --format '{{ range .IPAM.Config }}{{ println .Subnet }}{{ end }}'
-```
-
-Replace `NETWORK_NAME` with that network's actual name. Keep in mind that only the proxy's address or the specific subnet it connects from should be trusted. Trusting a subnet also trusts other containers attached to it. For an external proxy, use its source address or subnet as seen by Seerr.
-
-You can configure **Settings → General → Security → Trusted Networks** in Seerr. To apply the setting with an environment variable, add the following configuration to your `vars.yml` file (adapt to your needs):
-
-```yaml
-# This is an example. Replace the value with the actual proxy subnet.
-seerr_environment_variables_additional_variables: |
-  RADARR__SERVER__TRUSTEDNETWORKS=172.20.0.0/24
-```
-
-You can specify multiple addresses or subnets by comma-separating them. This environment setting takes precedence over the value saved in Seerr's configuration.
-
-It is recommended to keep authentication required for all addresses, especially when using a reverse proxy. If you configure **Allowed Hosts**, make sure to include `seerr_hostname` and any additional names used by API clients; an empty list currently accepts all hostnames.
-
-After upgrading, make sure to verify login and API access through the public HTTPS URL, and check Seerr's logs for the configured trusted network and any rejected hosts.
-
 ### Extending the configuration
 
 There are some additional things you may wish to configure about the service.
@@ -103,12 +66,6 @@ There are some additional things you may wish to configure about the service.
 Take a look at:
 
 - [`defaults/main.yml`](../defaults/main.yml) for some variables that you can customize via your `vars.yml` file. You can override settings (even those that don't have dedicated playbook variables) using the `seerr_environment_variables_additional_variables` variable
-
-Refer to [this page](https://wiki.servarr.com/seerr/environment-variables) for available options which can be set to `seerr_environment_variables_additional_variables`.
-
-### Notes on configuration
-
-A freshly installed Seerr has no authentication of its own, and this role does not add any. Seerr also serves its API key to unauthenticated callers on `/initialize.json`, and that key is enough to drive the whole API. It is recommended to turn authentication on under *Settings -> General -> Security* in Seerr itself, or put a middleware in front of it through `seerr_container_labels_additional_labels`, before making an installation reachable from the internet.
 
 ## Installing
 
@@ -123,8 +80,6 @@ If you use the MASH playbook, the shortcut commands with the [`just` program](ht
 ## Usage
 
 After running the command for installation, Seerr becomes available at the specified hostname like `https://example.com`.
-
-To get started, open the URL with a web browser to create an account. The recommended authentication method is `Forms (Login Page)`.
 
 ## Troubleshooting
 
