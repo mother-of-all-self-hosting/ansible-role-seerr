@@ -18,11 +18,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Setting up Seerr
 
-This is an [Ansible](https://www.ansible.com/) role which installs [Seerr](https://seerr.video/) to run as a [Docker](https://www.docker.com/) container wrapped in a systemd service.
+This is an [Ansible](https://www.ansible.com/) role which installs [Seerr](https://github.com/seerr-team/seerr) to run as a [Docker](https://www.docker.com/) container wrapped in a systemd service.
 
-Seerr is a movie organizer/manager for Usenet and BitTorrent users.
+Seerr is a media request and discovery manager with support for [Jellyfin](https://jellyfin.org/), [Plex](https://plex.tv/), and [Emby](https://emby.media/).
 
-See the project's [documentation](https://wiki.servarr.com/seerr) to learn what Seerr does and why it might be useful to you.
+See the project's [documentation](https://docs.seerr.dev/) to learn what Seerr does and why it might be useful to you.
+
+>[!NOTE]
+> If you are looking for an Ansible role for Jellyfin and Plex, you can check out [ansible-role-jellyfin](https://github.com/spatterIight/ansible-role-jellyfin) and [ansible-role-plex](https://github.com/spatterIight/ansible-role-plex), both of which are maintained by me.
 
 ## Adjusting the playbook configuration
 
