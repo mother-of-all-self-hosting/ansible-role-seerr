@@ -62,13 +62,6 @@ provisioner:
         # redirect middlewares in templates/labels.j2.
         seerr_path_prefix: /seerr-ui
 
-        # Neither the role's default of Etc/UTC nor the test host's zone, so
-        # that the timezone the container ends up in can only have come from
-        # templates/env.j2.
-        seerr_environment_variables_tz: Asia/Tokyo
-
-        seerr_container_labels_traefik_enabled: true
-
         # Deliberately not Seerr's own built-in default of 5055. The port
         # reaches the process only through `PORT` in the rendered env file
         # (`const port = Number(process.env.PORT) || 5055`), so a Seerr
@@ -77,19 +70,26 @@ provisioner:
 
         seerr_container_http_port: 17878
 
-        # The role's own default, restated because the verification depends on
-        # it: at `debug` Seerr logs its settings migrations, and at `info` it
-        # does not, which is what makes the level observable.
-        seerr_environment_variables_log_level: debug
-
         seerr_container_additional_volumes_custom:
           - type: bind
             src: "{{ seerr_molecule_extra_mount_path_host }}"
             dst: "{{ seerr_molecule_extra_mount_path_container }}"
             options: readonly
 
+        seerr_container_labels_traefik_enabled: true
+
         seerr_container_labels_additional_labels_custom:
           - "{{ seerr_molecule_label_name }}={{ seerr_molecule_label_value }}"
+
+        # Neither the role's default of Etc/UTC nor the test host's zone, so
+        # that the timezone the container ends up in can only have come from
+        # templates/env.j2.
+        seerr_environment_variables_tz: Asia/Tokyo
+
+        # The role's own default, restated because the verification depends on
+        # it: at `debug` Seerr logs its settings migrations, and at `info` it
+        # does not, which is what makes the level observable.
+        seerr_environment_variables_log_level: debug
   env:
     # Workaround for https://github.com/ansible/molecule/issues/4391
     ANSIBLE_ROLES_PATH: ${MOLECULE_PROJECT_DIRECTORY}/..:/.ansible/roles:/usr/share/ansible/roles:/etc/ansible/roles:~/.ansible/roles
