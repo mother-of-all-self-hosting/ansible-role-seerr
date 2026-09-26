@@ -41,18 +41,19 @@ provisioner:
         seerr_molecule_base_path: /seerr
         seerr_molecule_data_path: /seerr/data
 
-        # A directory bind-mounted into the container through
-        # `seerr_container_additional_volumes_custom`, so that the additional
-        # volumes list is exercised rather than assumed to work.
-        seerr_molecule_extra_mount_path_host: /var/lib/seerr-molecule-extra
-        seerr_molecule_extra_mount_path_container: /extra
-
-        # An arbitrary label, to check that `../templates/labels.j2` emits the
-        # additional labels and (with Traefik disabled below) nothing else.
-        seerr_molecule_label_name: mash.molecule.marker
-        seerr_molecule_label_value: seerr-default
+        # The host directory mounted into the container through
+        # `seerr_container_additional_volumes`, and the file placed in it by
+        # prepare.yml. Reading that file from inside the container is what
+        # proves the additional volumes reach the systemd unit rather than
+        # being merely declared in defaults/main.yml.
+        seerr_molecule_extra_volume_src: /seerr-molecule-extra
+        seerr_molecule_extra_volume_dst: /molecule-extra
 
         # Variables for Seerr
+        #
+        # Deliberately not 1000: the linuxserver.io PUID/PGID pattern has left a
+        # needed directory unwritable in other roles of this fleet, and a uid
+        # that exists in the test image by accident would hide that.
         seerr_uid: 1873
         seerr_gid: 1873
 
@@ -72,14 +73,17 @@ provisioner:
 
         seerr_container_additional_volumes_custom:
           - type: bind
-            src: "{{ seerr_molecule_extra_mount_path_host }}"
-            dst: "{{ seerr_molecule_extra_mount_path_container }}"
+            src: "{{ seerr_molecule_extra_volume_src }}"
+            dst: "{{ seerr_molecule_extra_volume_dst }}"
             options: readonly
 
         seerr_container_labels_traefik_enabled: true
 
         seerr_container_labels_additional_labels_custom:
-          - "{{ seerr_molecule_label_name }}={{ seerr_molecule_label_value }}"
+          - mash.molecule.additional-label=set-by-the-role
+
+        seerr_container_extra_arguments:
+          - "--label=mash.molecule.extra-argument=set-by-the-role"
 
         # Neither the role's default of Etc/UTC nor the test host's zone, so
         # that the timezone the container ends up in can only have come from

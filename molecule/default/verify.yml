@@ -101,9 +101,47 @@
               its own default of 5055 when `PORT` does not reach it.
             success_msg: "Seerr answers on port {{ seerr_container_http_port }}"
 
+        - name: Inspect Seerr container
+          ansible.builtin.command:
+            cmd: docker container inspect seerr
+          register: seerr_container_raw
+          changed_when: false
+
+        - name: Parse the Seerr container definition
+          ansible.builtin.set_fact:
+            seerr_container: "{{ (seerr_container_raw.stdout | from_json)[0] }}"
+
         # ------------------------------------------------------------------
-        # The bind mounts
+        # What the role told Docker to run
         # ------------------------------------------------------------------
+
+        - name: Collect the mounts the role asked for
+          ansible.builtin.set_fact:
+            seerr_config_mount: "{{ seerr_container.Mounts | selectattr('Destination', 'equalto', '/app/config') | list }}"
+            seerr_extra_mount: "{{ seerr_container.Mounts | selectattr('Destination', 'equalto', '/molecule-extra') | list }}"
+
+        - name: Assert that the role's data path is mounted at /app/config
+          ansible.builtin.assert:
+            that:
+              - seerr_config_mount | length == 1
+              - seerr_config_mount[0].Type == 'bind'
+              - seerr_config_mount[0].RW
+            fail_msg: "The role's data path is not bind-mounted at /app/config: {{ seerr_container.Mounts }}"
+            success_msg: "{{ seerr_config_mount[0].Source | default('?') }} is bind-mounted at /app/config"
+
+        # seerr_container_additional_volumes has been inert in several roles in
+        # this collection - rendered into a comment, or into a `-v` that silently
+        # dropped the options. Both the destination and the readonly option have
+        # to arrive.
+        - name: Assert that seerr_container_additional_volumes reached the container
+          ansible.builtin.assert:
+            that:
+              - seerr_extra_mount | length == 1
+              - seerr_extra_mount[0].Type == 'bind'
+              - seerr_extra_mount[0].Source == '/seerr-molecule-extra'
+              - not seerr_extra_mount[0].RW
+            fail_msg: "The additional volume did not reach the container: {{ seerr_container.Mounts }}"
+            success_msg: "The additional volume is mounted read-only at /molecule-extra"
 
         - name: Retrieve what Seerr reports about its data directory
           ansible.builtin.uri:
@@ -135,58 +173,6 @@
             that: seerr_database_header.stdout is search('SQLite format 3')
             fail_msg: "{{ seerr_molecule_data_path }}/db/db.sqlite3 is not a SQLite database"
             success_msg: "Seerr's database lives under {{ seerr_molecule_data_path }}"
-
-        - name: Inspect Seerr container
-          ansible.builtin.command:
-            cmd: docker container inspect seerr
-          register: seerr_container_raw
-          changed_when: false
-
-        - name: Parse the Seerr container definition
-          ansible.builtin.set_fact:
-            seerr_container: "{{ (seerr_container_raw.stdout | from_json)[0] }}"
-
-        - name: Assert the role's data path is bind-mounted as Seerr's configuration directory
-          ansible.builtin.assert:
-            that:
-              - seerr_data_mounts | length == 1
-              - seerr_data_mounts[0].Type == 'bind'
-            fail_msg: "{{ seerr_molecule_data_path }} is not bind-mounted to /app/config"
-            success_msg: "{{ seerr_molecule_data_path }} is bind-mounted to /app/config"
-          vars:
-            seerr_data_mounts: >-
-              {{
-                seerr_container.Mounts
-                | selectattr('Destination', 'equalto', '/app/config')
-                | selectattr('Source', 'equalto', seerr_molecule_data_path)
-                | list
-              }}
-
-        # `seerr_container_additional_volumes` is rendered into the systemd unit as
-        # `--mount` arguments. An entry that was silently dropped, or whose options
-        # were not passed on, would leave this list empty or read-write.
-        - name: Assert seerr_container_additional_volumes reaches the container
-          ansible.builtin.assert:
-            that:
-              - seerr_extra_mounts | length == 1
-              - seerr_extra_mounts[0].Type == 'bind'
-              - seerr_extra_mounts[0].Source == seerr_molecule_extra_mount_path_host
-              - not seerr_extra_mounts[0].RW
-            fail_msg: >-
-              {{ seerr_molecule_extra_mount_path_host }} is not mounted read-only at
-              {{ seerr_molecule_extra_mount_path_container }}
-            success_msg: "The additional volume is mounted read-only"
-          vars:
-            seerr_extra_mounts: >-
-              {{
-                seerr_container.Mounts
-                | selectattr('Destination', 'equalto', seerr_molecule_extra_mount_path_container)
-                | list
-              }}
-
-        # ------------------------------------------------------------------
-        # What `docker create` was actually told
-        # ------------------------------------------------------------------
 
         - name: Read the ports Seerr listens on
           ansible.builtin.command:
@@ -254,6 +240,17 @@
               - seerr_container.Config.Labels['traefik.http.services.seerr.loadbalancer.server.port'] == '17878'
             fail_msg: "The Traefik labels are not what templates/labels.j2 should have produced: {{ seerr_container.Config.Labels }}"
             success_msg: "The Traefik labels route {{ seerr_expected_hostname }}{{ seerr_expected_path_prefix }} to port 17878"
+
+        - name: Assert that the additional labels and extra arguments reached the container
+          ansible.builtin.assert:
+            that:
+              - seerr_container.Config.Labels['mash.molecule.additional-label'] == 'set-by-the-role'
+              - seerr_container.Config.Labels['mash.molecule.extra-argument'] == 'set-by-the-role'
+            fail_msg: >-
+              seerr_container_labels_additional_labels or
+              seerr_container_extra_arguments did not reach the container:
+              {{ seerr_container.Config.Labels }}
+            success_msg: "The additional label and the extra argument both reached the container"
 
         # ------------------------------------------------------------------
         # What the process inside the container actually sees
