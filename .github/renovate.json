@@ -5,6 +5,6 @@
     "`versioning=semver` on the annotation in defaults/main.yml is what keeps the version list honest: of the 381 tags ghcr.io/seerr-team/seerr publishes, strict semver keeps only the real vX.Y.Z releases and discards `latest`, `develop`, the floating `v3` / `v3.4` aliases and the `preview-*`, `sha-*` and `sha256-*` noise."
   ],
   "extends": [
-    "github>mother-of-all-self-hosting/renovate-config#v1.0.0"
+    "github>mother-of-all-self-hosting/renovate-config#v1.1.0"
   ]
 }
