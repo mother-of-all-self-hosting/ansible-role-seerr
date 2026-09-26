@@ -16,6 +16,11 @@ seerr_identifier: seerr
 seerr_base_path: "/{{ seerr_identifier }}"
 seerr_data_path: "{{ seerr_base_path }}/data"
 
+# renovate: datasource=docker depName=ghcr.io/seerr-team/seerr versioning=semver
+seerr_version: v3.4.1
+
+seerr_arch: amd64
+
 seerr_uid: ""
 seerr_gid: ""
 
@@ -25,11 +30,6 @@ seerr_hostname: ""
 # The path at which Seerr is served.
 # This value must either be `/` or not end with a slash (e.g. `/seerr`).
 seerr_path_prefix: /
-
-# renovate: datasource=docker depName=ghcr.io/seerr-team/seerr versioning=semver
-seerr_version: v3.4.1
-
-seerr_arch: amd64
 
 seerr_container_image: "{{ seerr_container_image_registry_prefix }}seerr-team/seerr:{{ seerr_container_image_tag }}"
 seerr_container_image_tag: "{{ seerr_version }}"
@@ -49,7 +49,9 @@ seerr_container_network_deletion_enabled: true
 # Takes an "<ip>:<port>" or "<port>" value (e.g. "127.0.0.1:5055"), or empty string to not expose.
 seerr_container_http_host_bind_port: ""
 
-# The port number in the container for the web UI
+# The port number in the container for the web UI.
+# It is passed into the container as `PORT` (see `../templates/env.j2`), so the process
+# really does listen on this port, rather than on Seerr's built-in default of 5055.
 seerr_container_http_port: 5055
 
 # A list of additional container networks that the container would be connected to.
@@ -83,6 +85,26 @@ seerr_container_labels_traefik_entrypoints: web-secure
 seerr_container_labels_traefik_tls: "{{ seerr_container_labels_traefik_entrypoints != 'web' }}"
 seerr_container_labels_traefik_tls_certResolver: default  # noqa var-naming
 
+# Controls which additional headers to attach to all HTTP requests.
+# To add your own custom request headers, use `seerr_container_labels_traefik_additional_request_headers_custom`
+seerr_container_labels_traefik_additional_request_headers: "{{ seerr_container_labels_traefik_additional_request_headers_auto | combine(seerr_container_labels_traefik_additional_request_headers_custom) }}"
+seerr_container_labels_traefik_additional_request_headers_auto: {}
+seerr_container_labels_traefik_additional_request_headers_custom: {}
+
+# Controls which additional headers to attach to all HTTP responses.
+# To add your own custom response headers, use `seerr_container_labels_traefik_additional_response_headers_custom`
+seerr_container_labels_traefik_additional_response_headers: "{{ seerr_container_labels_traefik_additional_response_headers_auto | combine(seerr_container_labels_traefik_additional_response_headers_custom) }}"
+seerr_container_labels_traefik_additional_response_headers_auto: |
+  {{
+    {}
+    | combine ({'X-XSS-Protection': seerr_http_header_xss_protection} if seerr_http_header_xss_protection else {})
+    | combine ({'X-Content-Type-Options': seerr_http_header_content_type_options} if seerr_http_header_content_type_options else {})
+    | combine ({'Content-Security-Policy': seerr_http_header_content_security_policy} if seerr_http_header_content_security_policy else {})
+    | combine ({'Permissions-Policy': seerr_http_header_permissions_policy} if seerr_http_header_permissions_policy else {})
+    | combine ({'Strict-Transport-Security': seerr_http_header_strict_transport_security} if seerr_http_header_strict_transport_security and seerr_container_labels_traefik_tls else {})
+  }}
+seerr_container_labels_traefik_additional_response_headers_custom: {}
+
 # seerr_container_labels_additional_labels contains a multiline string with additional labels to add to the container label file.
 # See `../templates/labels.j2` for details.
 # To add your own custom labels, use `seerr_container_labels_additional_labels_custom`
@@ -99,6 +121,59 @@ seerr_container_labels_additional_labels_custom: []
 seerr_container_extra_arguments: "{{ seerr_container_extra_arguments_auto + seerr_container_extra_arguments_custom }}"
 seerr_container_extra_arguments_auto: []
 seerr_container_extra_arguments_custom: []
+
+# A list of extra arguments to pass to the process inside the container
+# Example: ['--SOME_ARGUMENT']
+seerr_process_extra_arguments: "{{ seerr_process_extra_arguments_auto + seerr_process_extra_arguments_custom }}"
+seerr_process_extra_arguments_auto: []
+seerr_process_extra_arguments_custom: []
+
+# Specifies the value of the `X-XSS-Protection` header
+# Stops pages from loading when they detect reflected cross-site scripting (XSS) attacks.
+#
+# Learn more about it is here:
+# - https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-XSS-Protection
+# - https://portswigger.net/web-security/cross-site-scripting/reflected
+seerr_http_header_xss_protection: "1; mode=block"
+
+# Specifies the value of the `X-Content-Type-Options` header.
+# See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Content-Type-Options
+seerr_http_header_content_type_options: nosniff
+
+# Specifies the value of the `Content-Security-Policy` header.
+# See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy
+seerr_http_header_content_security_policy: frame-ancestors 'self'
+
+# Specifies the value of the `Permissions-Policy` header.
+# See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Permissions-Policy
+seerr_http_header_permissions_policy: "{{ 'interest-cohort=()' if seerr_floc_optout_enabled else '' }}"
+
+# Specifies the value of the `Strict-Transport-Security` header.
+# See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Strict-Transport-Security
+seerr_http_header_strict_transport_security: "max-age=31536000; includeSubDomains{{ '; preload' if seerr_hsts_preload_enabled else '' }}"
+
+# Controls whether to send a "Permissions-Policy interest-cohort=();" header along with all responses
+#
+# Learn more about what it is here:
+# - https://www.eff.org/deeplinks/2021/03/googles-floc-terrible-idea
+# - https://paramdeo.com/blog/opting-your-website-out-of-googles-floc-network
+# - https://amifloced.org/
+#
+# Of course, a better solution is to just stop using browsers (like Chrome), which participate in such tracking practices.
+# See: `seerr_http_header_permissions_policy`
+seerr_floc_optout_enabled: true
+
+# Controls if HSTS preloading is enabled
+#
+# In its strongest and recommended form, the [HSTS policy](https://www.chromium.org/hsts) includes all subdomains, and
+# indicates a willingness to be "preloaded" into browsers:
+# `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload`
+# For more information visit:
+# - https://en.wikipedia.org/wiki/HTTP_Strict_Transport_Security
+# - https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Strict-Transport-Security
+# - https://hstspreload.org/#opt-in
+# See: `seerr_http_header_strict_transport_security`
+seerr_hsts_preload_enabled: false
 
 # List of systemd services that the Seerr systemd service depends on
 seerr_systemd_required_services_list: "{{ (seerr_systemd_required_services_list_default + seerr_systemd_required_services_list_auto + seerr_systemd_required_services_list_custom) | unique }}"
