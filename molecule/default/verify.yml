@@ -118,7 +118,7 @@
         - name: Collect the mounts the role asked for
           ansible.builtin.set_fact:
             seerr_config_mount: "{{ seerr_container.Mounts | selectattr('Destination', 'equalto', '/app/config') | list }}"
-            seerr_extra_mount: "{{ seerr_container.Mounts | selectattr('Destination', 'equalto', '/molecule-extra') | list }}"
+            seerr_extra_mount: "{{ seerr_container.Mounts | selectattr('Destination', 'equalto', seerr_molecule_extra_volume_dst) | list }}"
 
         - name: Assert that the role's data path is mounted at /app/config
           ansible.builtin.assert:
@@ -138,10 +138,10 @@
             that:
               - seerr_extra_mount | length == 1
               - seerr_extra_mount[0].Type == 'bind'
-              - seerr_extra_mount[0].Source == '/seerr-molecule-extra'
+              - seerr_extra_mount[0].Source == seerr_molecule_extra_volume_src
               - not seerr_extra_mount[0].RW
             fail_msg: "The additional volume did not reach the container: {{ seerr_container.Mounts }}"
-            success_msg: "The additional volume is mounted read-only at /molecule-extra"
+            success_msg: "The additional volume is mounted read-only at {{ seerr_molecule_extra_volume_dst }}"
 
         # Reading the file back from inside the
         # container is the difference between the variable existing and it working.
