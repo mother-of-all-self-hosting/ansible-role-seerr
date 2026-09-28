@@ -25,7 +25,7 @@ Seerr is a media request and discovery manager with support for [Jellyfin](https
 See the project's [documentation](https://docs.seerr.dev/) to learn what Seerr does and why it might be useful to you.
 
 >[!NOTE]
-> If you are looking for an Ansible role for Jellyfin and Plex, you can check out [ansible-role-jellyfin](https://github.com/spatterIight/ansible-role-jellyfin) and [ansible-role-plex](https://github.com/spatterIight/ansible-role-plex), both of which are maintained by me.
+> If you are looking for an Ansible role for Jellyfin and Plex, you can check out [ansible-role-jellyfin](https://github.com/mother-of-all-self-hosting/ansible-role-jellyfin) and [ansible-role-plex](https://github.com/mother-of-all-self-hosting/ansible-role-plex), both of which are maintained by me.
 
 ## Adjusting the playbook configuration
 
