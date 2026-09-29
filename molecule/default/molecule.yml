@@ -42,7 +42,7 @@ provisioner:
         seerr_molecule_data_path: /seerr/data
 
         # The host directory mounted into the container through
-        # `seerr_container_additional_volumes`, and the file placed in it by
+        # `seerr_container_additional_volumes_custom`, and the file placed in it by
         # prepare.yml. Reading that file from inside the container is what
         # proves the additional volumes reach the systemd unit rather than
         # being merely declared in defaults/main.yml.

@@ -55,7 +55,7 @@ Here is a synopsis of what a successful run proves. Check the scenario itself fo
 - Seerr reports the version `seerr_version` pins
 - Seerr's SQLite database and log file are created under the role's data path with the bind mount
 - Seerr runs in `seerr_environment_variables_tz` and logs at `seerr_environment_variables_log_level`
-- `seerr_container_additional_volumes` reaches the container as a read-only mount, the additional container labels reach it
+- `seerr_container_additional_volumes_custom` reaches the container as a read-only mount, the additional container labels reach it
 - The rendered `env` and `labels` files are `0640` and the data path is `0750`, both owned by `seerr_uid`:`seerr_gid`
 
 ## Running
