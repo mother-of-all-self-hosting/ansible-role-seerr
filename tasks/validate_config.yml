@@ -22,9 +22,6 @@
   with_items:
     - seerr_uid
     - seerr_gid
-    - seerr_hostname
-    - seerr_path_prefix
-    - seerr_container_network
 
 - name: Run if Traefik is enabled
   when: seerr_container_labels_traefik_enabled | bool
