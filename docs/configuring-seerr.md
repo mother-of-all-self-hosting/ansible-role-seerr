@@ -59,9 +59,6 @@ seerr_hostname: "example.com"
 
 After adjusting the hostname, make sure to adjust your DNS records to point the domain to your server.
 
->[!NOTE]
-> The `seerr_path_prefix` variable can be adjusted to host under a subpath (e.g. `seerr_path_prefix: /seerr`), but this hasn't been tested yet.
-
 ### Extending the configuration
 
 There are some additional things you may wish to configure about the service.

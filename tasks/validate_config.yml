@@ -36,6 +36,13 @@
         - { "name": "seerr_container_labels_traefik_path_prefix", when: true }
         - { "name": "seerr_container_labels_traefik_middleware_basic_auth_users", when: "{{ seerr_container_labels_traefik_middleware_basic_auth_enabled }}" }
 
+    - name: Fail if seerr_container_labels_traefik_path_prefix is different than /
+      ansible.builtin.fail:
+        msg: >-
+          seerr_container_labels_traefik_path_prefix (`{{ seerr_container_labels_traefik_path_prefix }}`) must be `/`.
+          Seerr does not support hosting under a subpath yet.
+      when: "seerr_container_labels_traefik_path_prefix != '/'"
+
     # We ensure it doesn't end with a slash, because we handle both (slash and no-slash).
     # Knowing that `seerr_container_labels_traefik_path_prefix` does not end with a slash
     # ensures we know how to set these routes up without having to do "does it end with a slash" checks elsewhere.

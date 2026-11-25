@@ -29,6 +29,9 @@ seerr_hostname: ""
 
 # The path at which Seerr is served.
 # This value must either be `/` or not end with a slash (e.g. `/seerr`).
+#
+# Hosting Seerr under a subpath does not seem to be possible due to Seerr's
+# technical limitations.
 seerr_path_prefix: /
 
 seerr_container_image: "{{ seerr_container_image_registry_prefix }}seerr-team/seerr:{{ seerr_container_image_tag }}"
